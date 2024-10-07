@@ -57,7 +57,7 @@ type Port interface {
 }
 
 // NoTimeout should be used as a parameter to SetReadTimeout to disable timeout.
-var NoTimeout time.Duration = -1
+var NoTimeout time.Duration = 0
 
 // ModemStatusBits contains all the modem input status bits for a serial port (CTS, DSR, etc...).
 // It can be retrieved with the Port.GetModemStatusBits() method.
@@ -101,6 +101,7 @@ type Mode struct {
 	Parity            Parity           // Parity (see Parity type for more info)
 	StopBits          StopBits         // Stop bits (see StopBits type for more info)
 	InitialStatusBits *ModemOutputBits // Initial output modem bits status (if nil defaults to DTR=true and RTS=true)
+	NonBlock          bool
 }
 
 // Parity describes a serial port parity setting

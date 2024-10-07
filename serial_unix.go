@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"go.bug.st/serial/unixutils"
@@ -63,23 +64,20 @@ func (port *unixPort) Read(p []byte) (int, error) {
 		return 0, &PortError{code: PortClosed}
 	}
 
-	var deadline time.Time
-	if port.readTimeout != NoTimeout {
-		deadline = time.Now().Add(port.readTimeout)
-	}
+	deadline := time.Now().Add(port.readTimeout)
+	timeout := port.readTimeout
 
 	fds := unixutils.NewFDSet(port.handle, port.closeSignal.ReadFD())
 	for {
-		timeout := time.Duration(-1)
-		if port.readTimeout != NoTimeout {
+		if port.readTimeout > 0 {
 			timeout = time.Until(deadline)
-			if timeout < 0 {
-				// a negative timeout means "no-timeout" in Select(...)
-				timeout = 0
+			if timeout <= 0 {
+				return 0, fmt.Errorf("timed out")
 			}
 		}
+
 		res, err := unixutils.Select(fds, nil, fds, timeout)
-		if err == unix.EINTR {
+		if err == unix.EINTR || err == syscall.EAGAIN {
 			continue
 		}
 		if err != nil {
@@ -93,7 +91,7 @@ func (port *unixPort) Read(p []byte) (int, error) {
 			return 0, nil
 		}
 		n, err := unix.Read(port.handle, p)
-		if err == unix.EINTR {
+		if err == unix.EINTR || err == syscall.EAGAIN {
 			continue
 		}
 		// Linux: when the port is disconnected during a read operation
@@ -191,7 +189,7 @@ func (port *unixPort) SetRTS(rts bool) error {
 }
 
 func (port *unixPort) SetReadTimeout(timeout time.Duration) error {
-	if timeout < 0 && timeout != NoTimeout {
+	if timeout < 0 {
 		return &PortError{code: InvalidTimeoutValue}
 	}
 	port.readTimeout = timeout
@@ -275,7 +273,7 @@ func nativeOpen(portName string, mode *Mode) (*unixPort, error) {
 		return nil, &PortError{code: InvalidSerialPort, causedBy: fmt.Errorf("error configuring port: %w", err)}
 	}
 
-	unix.SetNonblock(h, false)
+	unix.SetNonblock(h, mode.NonBlock)
 
 	port.acquireExclusiveAccess()
 
